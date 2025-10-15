@@ -28,44 +28,29 @@ let videoFile = null;
 let trimTimes = { start: 0, end: 0 };
 let confirmedCropData = null;
 let cropper = null;
+let isProcessing = false;
 
 const formatTime = (seconds) => new Date(seconds * 1000).toISOString().substr(11, 8);
 
 uploadBtn.addEventListener('click', () => uploadInput.click());
-
 uploadInput.addEventListener('change', async (event) => {
     videoFile = event.target.files[0];
     if (!videoFile) return;
-
-    if (videoFile.size > 100 * 1024 * 1024) {
-        alert('Aviso: Arquivos grandes podem consumir muita memória e demorar para processar no navegador.');
-    }
-
     editorDiv.classList.remove('hidden');
     resultDiv.classList.remove('hidden');
     statusP.textContent = 'Carregando FFmpeg (só na primeira vez)...';
     errorMessage.classList.add('hidden');
     downloadLink.classList.add('hidden');
     cancelCrop();
-
     if (!ffmpeg.isLoaded()) await ffmpeg.load();
     statusP.textContent = 'Vídeo pronto para edição!';
-
     videoPreview.src = URL.createObjectURL(videoFile);
     videoPreview.controls = true;
-
     videoPreview.onloadedmetadata = () => {
         const duration = videoPreview.duration;
         trimTimes = { start: 0, end: duration };
-
         if (trimSlider.noUiSlider) trimSlider.noUiSlider.destroy();
-        noUiSlider.create(trimSlider, {
-            start: [0, duration],
-            connect: true,
-            range: { 'min': 0, 'max': duration },
-            tooltips: [{ to: formatTime }, { to: formatTime }]
-        });
-
+        noUiSlider.create(trimSlider, { start: [0, duration], connect: true, range: { 'min': 0, 'max': duration }, tooltips: [{ to: formatTime }, { to: formatTime }] });
         trimSlider.noUiSlider.on('update', (values) => {
             trimTimes.start = parseFloat(values[0]);
             trimTimes.end = parseFloat(values[1]);
@@ -75,38 +60,10 @@ uploadInput.addEventListener('change', async (event) => {
     };
 });
 
-activateCropBtn.addEventListener('click', () => {
-    if (cropper) return;
-    videoPreview.pause();
-    videoPreview.controls = false;
-    cropCanvas.width = videoPreview.videoWidth;
-    cropCanvas.height = videoPreview.videoHeight;
-    cropCanvas.getContext('2d').drawImage(videoPreview, 0, 0, cropCanvas.width, cropCanvas.height);
-    videoPreview.classList.add('hidden');
-    cropCanvas.style.display = 'block';
-    cropper = new Cropper(cropCanvas, { viewMode: 1, background: false, autoCropArea: 0.8 });
-    cropActionsInitial.classList.add('hidden');
-    cropActionsConfirm.classList.remove('hidden');
-});
-confirmCropBtn.addEventListener('click', () => {
-    const cropData = cropper.getData(true);
-    confirmedCropData = { w: cropData.width, h: cropData.height, x: cropData.x, y: cropData.y };
-    cropStatusMessage.textContent = '✓ Área de corte selecionada!';
-    cancelCrop();
-});
-cancelCropBtn.addEventListener('click', () => {
-    confirmedCropData = null;
-    cropStatusMessage.textContent = '';
-    cancelCrop();
-});
-function cancelCrop() {
-    if (cropper) { cropper.destroy(); cropper = null; }
-    videoPreview.classList.remove('hidden');
-    videoPreview.controls = true;
-    cropCanvas.style.display = 'none';
-    cropActionsInitial.classList.remove('hidden');
-    cropActionsConfirm.classList.add('hidden');
-}
+activateCropBtn.addEventListener('click', () => { if (cropper) return; videoPreview.pause(); videoPreview.controls = false; cropCanvas.width = videoPreview.videoWidth; cropCanvas.height = videoPreview.videoHeight; cropCanvas.getContext('2d').drawImage(videoPreview, 0, 0, cropCanvas.width, cropCanvas.height); videoPreview.classList.add('hidden'); cropCanvas.style.display = 'block'; cropper = new Cropper(cropCanvas, { viewMode: 1, background: false, autoCropArea: 0.8 }); cropActionsInitial.classList.add('hidden'); cropActionsConfirm.classList.remove('hidden'); });
+confirmCropBtn.addEventListener('click', () => { const cropData = cropper.getData(true); confirmedCropData = { w: cropData.width, h: cropData.height, x: cropData.x, y: cropData.y }; cropStatusMessage.textContent = '✓ Área de corte selecionada!'; cancelCrop(); });
+cancelCropBtn.addEventListener('click', () => { confirmedCropData = null; cropStatusMessage.textContent = ''; cancelCrop(); });
+function cancelCrop() { if (cropper) { cropper.destroy(); cropper = null; } videoPreview.classList.remove('hidden'); videoPreview.controls = true; cropCanvas.style.display = 'none'; cropActionsInitial.classList.remove('hidden'); cropActionsConfirm.classList.add('hidden'); }
 
 ffmpeg.setProgress(({ ratio }) => {
     if (ratio >= 0 && ratio <= 1) {
@@ -116,8 +73,13 @@ ffmpeg.setProgress(({ ratio }) => {
 });
 
 processBtn.addEventListener('click', async () => {
+    if (isProcessing) {
+        statusP.textContent = "Aguarde, um processamento já está em andamento.";
+        return;
+    }
     if (!videoFile) return alert('Por favor, envie um vídeo primeiro.');
     
+    isProcessing = true;
     processBtn.disabled = true;
     statusP.textContent = 'Preparando para processar...';
     errorMessage.classList.add('hidden');
@@ -127,20 +89,21 @@ processBtn.addEventListener('click', async () => {
         statusP.textContent = 'Carregando vídeo na memória do navegador...';
         ffmpeg.FS('writeFile', 'input.mp4', await fetchFile(videoFile));
 
-        const command = ['-i', 'input.mp4'];
+        const command = [];
+        command.push('-ss', String(trimTimes.start));
+        command.push('-i', 'input.mp4');
         
         if (confirmedCropData) {
             const { w, h, x, y } = confirmedCropData;
             command.push('-vf', `crop=${w}:${h}:${x}:${y}`);
-            statusP.innerHTML = `Iniciando re-codificação (pode ser lento)...`;
-        } else {
-            command.push('-c', 'copy');
-            statusP.innerHTML = `Iniciando corte rápido...`;
         }
-
+        
         const duration = trimTimes.end - trimTimes.start;
-        command.unshift('-ss', String(trimTimes.start)); 
         command.push('-t', String(duration));
+        
+        if (!confirmedCropData) {
+            command.push('-c', 'copy');
+        }
         
         command.push('output.mp4');
 
@@ -161,6 +124,7 @@ processBtn.addEventListener('click', async () => {
         errorMessage.classList.remove('hidden');
         console.error(error);
     } finally {
+        isProcessing = false;
         processBtn.disabled = false;
     }
 });
