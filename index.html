@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>⋆</title>
+    
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/15.7.1/nouislider.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.css" rel="stylesheet">
+    
+    <style>
+        :root {
+            --primary-color: #000000; --success-color: #28a745; --danger-color: #dc3545;
+            --light-gray: #ffffff; --dark-gray: #343a40; --border-radius: 8px;
+        }
+        body { font-family: system-ui, sans-serif; background-color: #000000; color: var(--light-gray); margin: 0; padding: 20px; }
+        .container { max-width: 900px; margin: 20px auto; background-color: #ffffff; padding: 2.5rem; border-radius: var(--border-radius); box-shadow: 0 4px 15px rgba(228, 228, 228, 0.08); color: var(--dark-gray); }
+        .step { margin-bottom: 2.5rem; border-bottom: 1px solid #dee2e6; padding-bottom: 2rem; }
+        .step:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+        .step h2 { display: flex; align-items: center; font-size: 1.5rem; color: var(--primary-color); }
+        .step h2 .step-number { background-color: var(--primary-color); color: white; border-radius: 50%; width: 35px; height: 35px; display: inline-flex; align-items: center; justify-content: center; margin-right: 15px; font-weight: bold; }
+        button { border: none; padding: 12px 20px; border-radius: var(--border-radius); cursor: pointer; font-size: 1rem; font-weight: 500; transition: all 0.2s ease; display: inline-flex; align-items: center; gap: 8px; }
+        button:disabled { background-color: #ccc; cursor: not-allowed; }
+        .btn-primary { background-color: var(--primary-color); color: white; } .btn-primary:hover:not(:disabled) { background-color: #5a1e69; }
+        .btn-success { background-color: var(--success-color); color: white; } .btn-success:hover:not(:disabled) { background-color: #218838; }
+        .btn-danger { background-color: var(--danger-color); color: white; } .btn-danger:hover:not(:disabled) { background-color: #c82333; }
+        .btn-secondary { background-color: #6c757d; color: white; } .btn-secondary:hover:not(:disabled) { background-color: #5a6268; }
+        input[type="file"] { display: none; }
+        #video-container { position: relative; background-color: #000; margin-bottom: 1rem; border-radius: var(--border-radius); overflow: hidden; max-height: 500px; }
+        #video-preview { display: block; width: 100%; height: auto; }
+        #crop-canvas { position: absolute; top: 0; left: 0; display: none; }
+        #trim-slider { margin: 30px 10px; }
+        .time-display { font-family: monospace; font-size: 1.1rem; background-color: #e9ecef; padding: 2px 6px; border-radius: 4px; }
+        #crop-status-message { color: var(--success-color); font-weight: bold; margin-left: 15px; }
+        .hidden { display: none !important; }
+        #status { font-size: 1.1rem; font-weight: 500; }
+        #download-link { font-size: 1.2rem; font-weight: bold; text-decoration: none; }
+        #error-message { color: var(--danger-color); background-color: #f8d7da; border: 1px solid #f5c6cb; padding: 1rem; border-radius: var(--border-radius); white-space: pre-wrap; font-family: monospace; }
+        .cropper-container { max-height: 480px; }
+        
+        #upload-step {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 300px; 
+            border-bottom: none; 
+        }
+    </style>
+</head>
+<body>
+    <main class="container">
+        <header style="text-align: center; margin-bottom: 2rem;">
+            
+        </header>
+
+        <section id="upload-step" class="step">
+            <input type="file" id="video-upload-input" accept="video/*">
+            <button id="video-upload-btn" class="btn-primary">Selecionar Vídeo</button>
+        </section>
+
+        <section id="editor" class="step hidden">
+            <div id="video-container">
+                <video id="video-preview"></video>
+                <canvas id="crop-canvas"></canvas>
+            </div>
+
+            <h3>Duração</h3>
+            <div id="trim-slider"></div>
+            <p><strong>Início:</strong> <span id="start-time-display" class="time-display">00:00:00</span> | <strong>Fim:</strong> <span id="end-time-display" class="time-display">00:00:00</span></p>
+            <div id="crop-controls">
+                <div id="crop-actions-initial">
+                    <button id="activate-crop-btn" class="btn-secondary">✂️ Ativar Ferramenta de Corte</button>
+                    <span id="crop-status-message"></span>
+                </div>
+                <div id="crop-actions-confirm" class="hidden">
+                    <button id="confirm-crop-btn" class="btn-success">✅ Confirmar Corte</button>
+                    <button id="cancel-crop-btn" class="btn-danger">❌ Cancelar</button>
+                </div>
+            </div>
+        </section>
+
+        <section id="result" class="step hidden">
+            <button id="process-btn" class="btn-success" style="font-size: 1.2rem; padding: 15px 25px;">Modificar</button>
+            <div id="result-feedback" style="margin-top: 1.5rem;">
+                <p id="status"></p>
+                <p id="error-message" class="hidden"></p>
+                <a id="download-link" href="#" class="hidden"></a>
+            </div>
+        </section>
+    </main>
+    
+    <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.0/dist/ffmpeg.min.js"></script>
+    <script src="https://unpkg.com/@ffmpeg/core-st@0.11.1/dist/ffmpeg-core.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/15.7.1/nouislider.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.js"></script>
+    
+    <script src="script.js"></script>
+</body>
+</html>
